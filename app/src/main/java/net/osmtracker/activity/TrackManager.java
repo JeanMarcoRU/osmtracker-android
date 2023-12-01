@@ -45,6 +45,11 @@ import net.osmtracker.gpx.ExportToTempFileTask;
 import net.osmtracker.util.FileSystemUtils;
 
 import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.Date;
 
 /**
@@ -488,32 +493,9 @@ public class TrackManager extends AppCompatActivity
 				break;
 
 			case R.id.trackmgr_contextmenu_export:
-				if (ContextCompat.checkSelfPermission(this,
-						Manifest.permission.WRITE_EXTERNAL_STORAGE)  != PackageManager.PERMISSION_GRANTED) {
-
-					// Should we show an explanation?
-					if (ActivityCompat.shouldShowRequestPermissionRationale(this,
-							Manifest.permission.WRITE_EXTERNAL_STORAGE)) {
-
-						// Show an expanation to the user *asynchronously* -- don't block
-						// this thread waiting for the user's response! After the user
-						// sees the explanation, try again to request the permission.
-						// TODO: explain why we need permission.
-						Log.w(TAG, "we should explain why we need write permission");
-
-					} else {
-
-						// No explanation needed, we can request the permission.
-						ActivityCompat.requestPermissions(this,
-								new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE},
-								RC_WRITE_PERMISSIONS);
-						break;
-					}
-
-				} else {
-					exportTracks(true);
-					break;
-				}
+				//if sdk version is 23 or higher and <= 32, we need to check if we have write permission
+				exportAndShareTrack(contextMenuSelectedTrackid);
+				break;
 
 			case R.id.trackmgr_contextmenu_share:
 				if (ContextCompat.checkSelfPermission(this,
@@ -609,6 +591,30 @@ public class TrackManager extends AppCompatActivity
 				break;
 		}
 		return super.onContextItemSelected(item);
+	}
+
+	private void exportAndShareTrack(final long trackId){
+		/*
+		 Create temp file that will remain in cache
+		*/
+		new ExportToTempFileTask(this, trackId){
+			@Override
+			protected void executionCompleted(){
+				//shareFile(this.getTmpFile(), context);
+				exportAndShareTrackAUX(this.getTmpFile());
+			}
+		}.execute();
+
+	}
+
+	private void exportAndShareTrackAUX(File tmpGPXFile){
+		Uri contentUri = FileProvider.getUriForFile(this, "net.osmtracker.fileprovider", tmpGPXFile);
+		Intent shareIntent = new Intent();
+		shareIntent.setAction(Intent.ACTION_SEND);
+		shareIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION); // Important to give temporary reading permission
+		shareIntent.setDataAndType(contentUri, this.getContentResolver().getType(contentUri));
+		shareIntent.putExtra(Intent.EXTRA_STREAM, contentUri);
+		this.startActivity(Intent.createChooser(shareIntent, "Choose an app"));
 	}
 
 	private void uploadTrack(long trackId){
@@ -870,44 +876,11 @@ public class TrackManager extends AppCompatActivity
 				break;
 			}
 			case RC_WRITE_PERMISSIONS_EXPORT_ONE: {
-				if (Build.VERSION.SDK_INT>=Build.VERSION_CODES.M && Build.VERSION.SDK_INT<Build.VERSION_CODES.R){
-					// If request is cancelled, the result arrays are empty.
-					if (grantResults.length > 0
-							&& grantResults[0] == PackageManager.PERMISSION_GRANTED) {
 
-						// permission was granted, yay!
-						exportTracks(true);
-
-					} else {
-
-						// permission denied, boo! Disable the
-						// functionality that depends on this permission.
-						//TODO: add an informative message.
-						Log.w(TAG, "we should explain why we need write permission_EXPORT_ONE");
-						Toast.makeText(this, "To export the GPX trace we need to write on the storage.", Toast.LENGTH_LONG).show();
-					}
-					break;
-				}
-
-				if (Build.VERSION.SDK_INT>=Build.VERSION_CODES.R) {
-					if (!Environment.isExternalStorageManager()) {
-						try {
-							Intent intent = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
-							intent.addCategory("android.intent.category.DEFAULT");
-							intent.setData(Uri.parse(String.format("package:%s", getApplicationContext().getPackageName())));
-							startActivityIfNeeded(intent, 101);
-						} catch (Exception exception) {
-							Intent intent = new Intent();
-							intent.setAction(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
-							startActivityIfNeeded(intent, 101);
-						}
-					}else{
-						// permission was granted, yay!
-						exportTracks(true);
-					}
-					break;
-				}
+				exportAndShareTrack(contextMenuSelectedTrackid);
 				break;
+
+
 			}
 			case RC_WRITE_STORAGE_DISPLAY_TRACK: {
 				if (Build.VERSION.SDK_INT>=Build.VERSION_CODES.M && Build.VERSION.SDK_INT<Build.VERSION_CODES.R){
